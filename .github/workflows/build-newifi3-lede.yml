@@ -1,44 +1,63 @@
 # 工作流名称
-name: Build Newifi 3 LEDE Firmware (64MB Flash)
+name: Build Newifi 3 LEDE Firmware (64MB W25Q512JVFIQ)
 
-# 触发条件：手动触发 + push到main分支时触发
+# 触发条件：手动触发（推荐）+ 仅修改该配置文件时自动触发
 on:
-  workflow_dispatch:  # 手动触发（推荐）
+  workflow_dispatch:
   push:
     branches: [ main ]
     paths:
-      - '.github/workflows/build-newifi3-lede.yml'  # 仅修改该配置文件时触发push编译
+      - '.github/workflows/build-newifi3-lede.yml'
 
-# 运行环境
+# 运行环境与编译任务
 jobs:
-  build:
-    runs-on: ubuntu-22.04  # 使用Ubuntu 22.04（兼容LEDE编译）
+  build-firmware:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      actions: write
+      artifacts: write
+
     steps:
-      # 步骤1：检出源码
-      - name: Checkout LEDE Source
+      # 步骤1：检出源码（含子模块）
+      - name: Checkout Source Code
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.repository }}  # 检出你Fork的仓库
-          submodules: 'recursive'  # 拉取子模块（LEDE依赖）
+          submodules: 'recursive'
           fetch-depth: 1
 
-      # 步骤2：安装编译依赖
+      # 步骤2：安装编译依赖（完整版）
       - name: Install Build Dependencies
         run: |
-          sudo apt update -y
-          sudo apt full-upgrade -y
-          sudo apt install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
-          gettext git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev file wget \
-          libelf-dev libncursesw5-dev python3 python3-pip xz-utils swig libc6-dev-i386
+          sudo apt update -y && sudo apt full-upgrade -y
+          sudo apt install -y \
+            build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
+            gettext git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev \
+            file wget libelf-dev libncursesw5-dev python3 python3-pip xz-utils swig \
+            libc6-dev-i386 liblzma-dev libzstd-dev
           sudo apt autoremove -y && sudo apt clean -y
+          sudo rm -rf /var/lib/apt/lists/*
 
-      # 步骤3：应用W25Q512JVFIQ闪存配置（若你已提交修改，可注释此步骤）
-      - name: Add W25Q512JVFIQ Config
+      # 步骤3：核心修正 - 添加W25Q512JVFIQ闪存配置（兼容winbond.c/spi-nor.c）
+      - name: Add W25Q512JVFIQ Flash Config
         run: |
-          # 1. 修改winbond.c添加闪存ID
-          sed -i '/{ "w25q256",  INFO(0xef1900, 0, 64 * 1024, 512, SECT_4K) },/a \    { "w25q512jv", INFO(0xef1a00, 0, 64 * 1024, 1024, SECT_4K) }, // W25Q512JVFIQ (64MB)' drivers/mtd/spi-nor/winbond.c
+          echo "=== 开始配置W25Q512JVFIQ闪存参数 ==="
           
-          # 2. 修改设备树DTS文件
+          # 适配不同源码结构：优先winbond.c，否则修改spi-nor.c
+          if [ -f "drivers/mtd/spi-nor/winbond.c" ]; then
+              # 情况1：存在独立winbond.c
+              sed -i '/{ "w25q256",  INFO(0xef1900, 0, 64 * 1024, 512, SECT_4K) },/a \    { "w25q512jv", INFO(0xef1a00, 0, 64 * 1024, 1024, SECT_4K) }, // W25Q512JVFIQ (64MB)' drivers/mtd/spi-nor/winbond.c
+              echo "✅ 已修改winbond.c添加W25Q512JVFIQ ID"
+          else
+              # 情况2：无winbond.c，修改spi-nor.c（适配Lean源码）
+              # 匹配1：WINBOND_SPI_NOR_FLASH_INFO宏格式
+              sed -i '/WINBOND_SPI_NOR_FLASH_INFO("w25q256",  0x19, 512),/a \    WINBOND_SPI_NOR_FLASH_INFO("w25q512jv",  0x1a, 1024), // W25Q512JVFIQ (64MB)' drivers/mtd/spi-nor/spi-nor.c
+              # 匹配2：备用（INFO宏格式），若上面不生效可取消注释
+              # sed -i '/{ "w25q256",  INFO(0xef1900, 0, 64 * 1024, 512, SECT_4K) },/a \    { "w25q512jv", INFO(0xef1a00, 0, 64 * 1024, 1024, SECT_4K) }, // W25Q512JVFIQ (64MB)' drivers/mtd/spi-nor/spi-nor.c
+              echo "✅ 已修改spi-nor.c添加W25Q512JVFIQ ID"
+          fi
+
+          # 覆盖设备树文件（适配64MB闪存分区）
           cat > target/linux/ramips/dts/mt7621_newifi-d2.dts << 'EOF'
           #include "mt7621.dtsi"
           #include <dt-bindings/gpio/gpio.h>
@@ -57,7 +76,6 @@ jobs:
 
               leds {
                   compatible = "gpio-leds";
-
                   led_status: status {
                       label = "blue:status";
                       gpios = <&gpio0 13 GPIO_ACTIVE_LOW>;
@@ -66,7 +84,6 @@ jobs:
 
               keys {
                   compatible = "gpio-keys";
-
                   reset {
                       label = "reset";
                       gpios = <&gpio0 18 GPIO_ACTIVE_LOW>;
@@ -77,7 +94,6 @@ jobs:
 
           &spi0 {
               status = "okay";
-
               flash@0 {
                   compatible = "winbond,w25q512jv", "jedec,spi-nor";
                   reg = <0>;
@@ -88,35 +104,15 @@ jobs:
                       #address-cells = <1>;
                       #size-cells = <1>;
 
-                      partition@0 {
-                          label = "u-boot";
-                          reg = <0x000000 0x030000>;
-                          read-only;
-                      };
-
-                      partition@30000 {
-                          label = "u-boot-env";
-                          reg = <0x030000 0x010000>;
-                      };
-
-                      partition@40000 {
-                          label = "factory";
-                          reg = <0x040000 0x010000>;
-                          read-only;
-                      };
-
-                      partition@50000 {
-                          label = "firmware";
-                          reg = <0x050000 0x3fb0000>;
-                      };
+                      partition@0 { label = "u-boot"; reg = <0x000000 0x030000>; read-only; };
+                      partition@30000 { label = "u-boot-env"; reg = <0x030000 0x010000>; };
+                      partition@40000 { label = "factory"; reg = <0x040000 0x010000>; read-only; };
+                      partition@50000 { label = "firmware"; reg = <0x050000 0x3fb0000>; };
                   };
               };
           };
 
-          &pcie {
-              status = "okay";
-          };
-
+          &pcie { status = "okay"; };
           &pcie0 {
               mt76@0,0 {
                   reg = <0x0000 0 0 0 0>;
@@ -124,7 +120,6 @@ jobs:
                   ieee80211-freq-limit = <5000000 6000000>;
               };
           };
-
           &pcie1 {
               mt76@0,0 {
                   reg = <0x0000 0 0 0 0>;
@@ -132,41 +127,16 @@ jobs:
                   ieee80211-freq-limit = <2400000 2500000>;
               };
           };
-
-          &gmac0 {
-              mtd-mac-address = <&factory 0xe000>;
-          };
-
+          &gmac0 { mtd-mac-address = <&factory 0xe000>; };
           &switch0 {
               ports {
-                  port@0 {
-                      status = "okay";
-                      label = "lan1";
-                  };
-
-                  port@1 {
-                      status = "okay";
-                      label = "lan2";
-                  };
-
-                  port@2 {
-                      status = "okay";
-                      label = "lan3";
-                  };
-
-                  port@3 {
-                      status = "okay";
-                      label = "lan4";
-                  };
-
-                  port@4 {
-                      status = "okay";
-                      label = "wan";
-                      mtd-mac-address = <&factory 0xe006>;
-                  };
+                  port@0 { status = "okay"; label = "lan1"; };
+                  port@1 { status = "okay"; label = "lan2"; };
+                  port@2 { status = "okay"; label = "lan3"; };
+                  port@3 { status = "okay"; label = "lan4"; };
+                  port@4 { status = "okay"; label = "wan"; mtd-mac-address = <&factory 0xe006>; };
               };
           };
-
           &state_default {
               gpio {
                   groups = "i2c", "uart2", "uart3", "jtag", "wdt";
@@ -174,41 +144,51 @@ jobs:
               };
           };
           EOF
-          
-          # 3. 修改mt7621.mk调整固件大小
-          sed -i 's/IMAGE_SIZE := .*/IMAGE_SIZE := 64512k/' target/linux/ramips/image/mt7621.mk
+          echo "✅ 已替换设备树文件适配64MB闪存"
 
-      # 步骤4：配置编译选项（选择Newifi D2机型）
-      - name: Configure Build
+          # 修改固件打包大小（64512k = 63MB，匹配分区）
+          sed -i 's/IMAGE_SIZE := .*/IMAGE_SIZE := 64512k/' target/linux/ramips/image/mt7621.mk
+          echo "✅ 已调整固件最大大小为64512k"
+
+      # 步骤4：配置编译参数（指定新路由3机型）
+      - name: Configure Build Options
         run: |
           # 加载默认配置
           make defconfig
-          # 手动指定目标机型（确保编译Newifi D2）
-          echo -e "\nCONFIG_TARGET_ramips=y\nCONFIG_TARGET_ramips_mt7621=y\nCONFIG_TARGET_ramips_mt7621_DEVICE_newifi-d2=y" >> .config
-          # 启用IPv6（可选）
+          # 强制指定编译目标
+          echo -e "\nCONFIG_TARGET_ramips=y" >> .config
+          echo "CONFIG_TARGET_ramips_mt7621=y" >> .config
+          echo "CONFIG_TARGET_ramips_mt7621_DEVICE_newifi-d2=y" >> .config
+          # 可选：启用IPv6、移除不必要组件
           echo "CONFIG_IPV6=y" >> .config
-          # 保存配置
+          echo "CONFIG_DROP_BINARY_FILES=y" >> .config
+          # 重新生成配置
           make defconfig
+          echo "✅ 编译配置完成"
 
-      # 步骤5：下载编译依赖包
+      # 步骤5：下载依赖包（避免编译时网络问题）
       - name: Download Dependencies
         run: |
-          make -j$(nproc) download V=s
-          find dl -size -1024c -exec rm -f {} \;  # 删除空文件
+          make -j2 download V=s
+          # 删除空文件/无效包
+          find dl -size -1024c -exec rm -f {} \;
+          echo "✅ 依赖包下载完成"
 
-      # 步骤6：开始编译固件
+      # 步骤6：编译固件（2线程适配GitHub Actions资源）
       - name: Build Firmware
         run: |
-          make -j$(nproc) V=s  # -j后为CPU核心数，Actions默认2核，可改为-j2避免过载
-          # 压缩编译日志（便于排查错误）
-          tar -czf build-logs.tar.gz logs/
+          make -j2 V=s || make -j1 V=s  # 单线程降级容错
+          # 压缩日志用于排错
+          tar -czf build-logs.tar.gz logs/ || echo "日志压缩失败，忽略"
+          echo "✅ 固件编译完成"
 
       # 步骤7：上传编译产物（固件+日志）
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: newifi3-lede-firmware-64mb
+          name: newifi3-64mb-firmware
           path: |
-            bin/targets/ramips/mt7621/*.bin  # 所有固件文件
-            build-logs.tar.gz                # 编译日志
+            bin/targets/ramips/mt7621/*.bin
+            build-logs.tar.gz
           retention-days: 30  # 产物保留30天
+          if-no-files-found: warn  # 无文件时仅警告，不终止
