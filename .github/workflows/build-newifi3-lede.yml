@@ -45,73 +45,153 @@ jobs:
           # 适配不同源码结构：优先winbond.c，否则修改spi-nor.c
           if [ -f "drivers/mtd/spi-nor/winbond.c" ]; then
               # 情况1：存在独立winbond.c
-              sed -i '/{ "w25q256",  INFO(0xef1900, 0, 64 * 1024, 512, SECT_4K) },/a \    { "w25q512jv", INFO(0xef1a00, 0, 64 * 1024, 1024, SECT_4K) }, // W25Q512JVFIQ (64MB)' drivers/mtd/spi-nor/winbond.c
+              sed -i '/{ "w25q256jw", INFO(0xef6019, 0, 64 * 1024, 512,/a \    { "w25q512jv", INFO(0xef4020, 0, 64 * 1024, 1024, SECT_4K | SPI_NOR_QUAD_READ | SPI_NOR_DUAL_READ | SPI_NOR_HAS_TB | SPI_NOR_TB_SR_BIT6 | SPI_NOR_HAS_LOCK | SPI_NOR_4BIT_BP) }, // W25Q512JVFIQ (64MB)' drivers/mtd/spi-nor/winbond.c
               echo "✅ 已修改winbond.c添加W25Q512JVFIQ ID"
           else
               # 情况2：无winbond.c，修改spi-nor.c（适配Lean源码）
               # 匹配1：WINBOND_SPI_NOR_FLASH_INFO宏格式
-              sed -i '/WINBOND_SPI_NOR_FLASH_INFO("w25q256",  0x19, 512),/a \    WINBOND_SPI_NOR_FLASH_INFO("w25q512jv",  0x1a, 1024), // W25Q512JVFIQ (64MB)' drivers/mtd/spi-nor/spi-nor.c
+              sed -i '/WINBOND_SPI_NOR_FLASH_INFO("w25q256",  0x19, 512),/a \    WINBOND_SPI_NOR_FLASH_INFO("w25q512jv",  0x20, 1024), // W25Q512JVFIQ (64MB)' drivers/mtd/spi-nor/spi-nor.c
               # 匹配2：备用（INFO宏格式），若上面不生效可取消注释
-              # sed -i '/{ "w25q256",  INFO(0xef1900, 0, 64 * 1024, 512, SECT_4K) },/a \    { "w25q512jv", INFO(0xef1a00, 0, 64 * 1024, 1024, SECT_4K) }, // W25Q512JVFIQ (64MB)' drivers/mtd/spi-nor/spi-nor.c
+              sed -i '/{ "w25q256jvm", INFO(0xef7019, 0, 64 * 1024, 512,/a \    { "w25q512jv", INFO(0xef4020, 0, 64 * 1024, 1024, SECT_4K | SPI_NOR_QUAD_READ | SPI_NOR_DUAL_READ | SPI_NOR_HAS_TB | SPI_NOR_HAS_LOCK) }, // W25Q512JVFIQ (64MB)' drivers/mtd/spi-nor/spi-nor.c
               echo "✅ 已修改spi-nor.c添加W25Q512JVFIQ ID"
           fi
 
           # 覆盖设备树文件（适配64MB闪存分区）
-          cat > target/linux/ramips/dts/mt7621_newifi-d2.dts << 'EOF'
+          cat > target/linux/ramips/dts/mt7621_d-team_newifi-d2.dts << 'EOF'
           #include "mt7621.dtsi"
           #include <dt-bindings/gpio/gpio.h>
           #include <dt-bindings/input/input.h>
 
           / {
-              compatible = "newifi,d2", "mediatek,mt7621-soc";
-              model = "Newifi D2 (Newifi 3)";
+              compatible = "d-team,newifi-d2", "mediatek,mt7621-soc";
+              model = "Newifi-D2 (Newifi 3)";
 
               aliases {
-                  led-boot = &led_status;
-                  led-failsafe = &led_status;
-                  led-running = &led_status;
-                  led-upgrade = &led_status;
+                  led-boot = &led_power_blue;
+                  led-failsafe = &led_power_blue;
+                  led-running = &led_power_blue;
+                  led-upgrade = &led_power_blue;
+                  label-mac-device = &gmac0;
+              };
+
+              chosen {
+                  bootargs = "console=ttyS0,115200";
               };
 
               leds {
                   compatible = "gpio-leds";
-                  led_status: status {
-                      label = "blue:status";
-                      gpios = <&gpio0 13 GPIO_ACTIVE_LOW>;
+
+                  power-amber {
+                      label = "amber:power";
+                      gpios = <&gpio 6 GPIO_ACTIVE_LOW>;
+                  };
+
+                  led_power_blue: power-blue {
+                      label = "blue:power";
+                      gpios = <&gpio 15 GPIO_ACTIVE_LOW>;
+                  };
+
+                  internet-amber {
+                      label = "amber:internet";
+                      gpios = <&gpio 4 GPIO_ACTIVE_LOW>;
+                  };
+
+                  internet-blue {
+                      label = "blue:internet";
+                      gpios = <&gpio 13 GPIO_ACTIVE_LOW>;
+                  };
+
+                  wlan2g {
+                      label = "blue:wlan2g";
+                      gpios = <&gpio 14 GPIO_ACTIVE_LOW>;
+                  };
+
+                  wlan5g {
+                      label = "blue:wlan5g";
+                      gpios = <&gpio 16 GPIO_ACTIVE_LOW>;
+                  };
+
+                  usb {
+                      label = "blue:usb";
+                      gpios = <&gpio 10 GPIO_ACTIVE_LOW>;
+                      trigger-sources = <&xhci_ehci_port1>, <&ehci_port2>;
+                      linux,default-trigger = "usbport";
                   };
               };
 
               keys {
                   compatible = "gpio-keys";
+
                   reset {
                       label = "reset";
-                      gpios = <&gpio0 18 GPIO_ACTIVE_LOW>;
+                      gpios = <&gpio 3 GPIO_ACTIVE_LOW>;
                       linux,code = <KEY_RESTART>;
+                  };
+
+                  wps {
+                      label = "wps";
+                      gpios = <&gpio 7 GPIO_ACTIVE_LOW>;
+                      linux,code = <KEY_WPS_BUTTON>;
+                  };
+              };
+
+              gpio_export {
+                  compatible = "gpio-export";
+                  #size-cells = <0>;
+
+                  power_usb3 {
+                      gpio-export,name = "power_usb3";
+                      gpio-export,output = <1>;
+                      gpios = <&gpio 11 GPIO_ACTIVE_HIGH>;
                   };
               };
           };
 
           &spi0 {
               status = "okay";
+
               flash@0 {
-                  compatible = "winbond,w25q512jv", "jedec,spi-nor";
+                  compatible = "jedec,spi-nor";
                   reg = <0>;
-                  spi-max-frequency = <80000000>;
+                  spi-max-frequency = <45000000>;
+                  broken-flash-reset;
 
                   partitions {
                       compatible = "fixed-partitions";
                       #address-cells = <1>;
                       #size-cells = <1>;
 
-                      partition@0 { label = "u-boot"; reg = <0x000000 0x030000>; read-only; };
-                      partition@30000 { label = "u-boot-env"; reg = <0x030000 0x010000>; };
-                      partition@40000 { label = "factory"; reg = <0x040000 0x010000>; read-only; };
-                      partition@50000 { label = "firmware"; reg = <0x050000 0x3fb0000>; };
+                      partition@0 {
+                          label = "u-boot";
+                          reg = <0x0 0x30000>;
+                          read-only;
+                      };
+
+                      partition@30000 {
+                          label = "u-boot-env";
+                          reg = <0x30000 0x10000>;
+                          read-only;
+                      };
+
+                      factory: partition@40000 {
+                          label = "factory";
+                          reg = <0x40000 0x10000>;
+                          read-only;
+                      };
+
+                      partition@50000 {
+                          compatible = "denx,uimage";
+                          label = "firmware";
+                          reg = <0x50000 0x3fb0000>;
+                      };
                   };
               };
           };
 
-          &pcie { status = "okay"; };
+          &pcie {
+              status = "okay";
+          };
+
           &pcie0 {
               mt76@0,0 {
                   reg = <0x0000 0 0 0 0>;
@@ -119,34 +199,46 @@ jobs:
                   ieee80211-freq-limit = <5000000 6000000>;
               };
           };
+
           &pcie1 {
               mt76@0,0 {
                   reg = <0x0000 0 0 0 0>;
                   mediatek,mtd-eeprom = <&factory 0x0000>;
-                  ieee80211-freq-limit = <2400000 2500000>;
               };
           };
-          &gmac0 { mtd-mac-address = <&factory 0xe000>; };
+
+          &gmac0 {
+              mtd-mac-address = <&factory 0xe000>;
+          };
+
+          &gsw {
+              mediatek,portmap = "llllw";
+              status = "okay";
+          };
+
+          &hnat {
+              mtketh-wan = "eth0.2";
+              mtketh-ppd = "eth0.1";
+              mtketh-lan = "eth0";
+              mtketh-max-gmac = <1>;
+              /delete-property/ mtkdsa-wan-port;
+          };
+
           &switch0 {
-              ports {
-                  port@0 { status = "okay"; label = "lan1"; };
-                  port@1 { status = "okay"; label = "lan2"; };
-                  port@2 { status = "okay"; label = "lan3"; };
-                  port@3 { status = "okay"; label = "lan4"; };
-                  port@4 { status = "okay"; label = "wan"; mtd-mac-address = <&factory 0xe006>; };
-              };
+              status = "disabled";
           };
+
           &state_default {
               gpio {
-                  groups = "i2c", "uart2", "uart3", "jtag", "wdt";
+                  groups = "i2c", "jtag", "uart2", "uart3";
                   function = "gpio";
               };
           };
           EOF
           echo "✅ 已替换设备树文件适配64MB闪存"
 
-          # 修改固件打包大小（64512k = 63MB，匹配分区）
-          sed -i 's/IMAGE_SIZE := .*/IMAGE_SIZE := 64512k/' target/linux/ramips/image/mt7621.mk
+          # 修改固件打包大小（64512k = 63MB，匹配64MB闪存分区）
+          sed -i '/define Device\/d-team_newifi-d2/,/endef/ s/IMAGE_SIZE := .*/IMAGE_SIZE := 64512k/' target/linux/ramips/image/mt7621.mk
           echo "✅ 已调整固件最大大小为64512k"
 
       # 步骤4：配置编译参数（指定新路由3机型）
@@ -157,7 +249,7 @@ jobs:
           # 强制指定编译目标
           echo -e "\nCONFIG_TARGET_ramips=y" >> .config
           echo "CONFIG_TARGET_ramips_mt7621=y" >> .config
-          echo "CONFIG_TARGET_ramips_mt7621_DEVICE_newifi-d2=y" >> .config
+          echo "CONFIG_TARGET_ramips_mt7621_DEVICE_d-team_newifi-d2=y" >> .config
           # 可选：启用IPv6、移除不必要组件
           echo "CONFIG_IPV6=y" >> .config
           echo "CONFIG_DROP_BINARY_FILES=y" >> .config
