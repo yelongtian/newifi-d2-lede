@@ -16,7 +16,6 @@ jobs:
     permissions:
       contents: read
       actions: write
-      artifacts: write
 
     steps:
       # 步骤1：检出源码（含子模块）
