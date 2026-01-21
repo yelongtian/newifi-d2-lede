@@ -1,0 +1,36 @@
+From: Newifi3 Support <support@newifi3.com>
+Date: Tue, 21 Jan 2026 00:00:00 +0800
+Subject: [PATCH] mtd: spi-nor: add support for Winbond W25Q512JVFIQ
+
+The Winbond W25Q512JVFIQ is a 64MB SPI-NOR chip used in Newifi D2
+(Newifi 3) router. It supports 4K sectors as well as block protection
+and Dual-/Quad-read.
+
+Hardware specifications:
+- Capacity: 64MB (512Mbit)
+- Page size: 256 bytes
+- Sector size: 4KB
+- Block size: 64KB
+- SPI clock: up to 80MHz
+- Features: 4K sectors, Dual/Quad read, Block protection
+
+Tested on: Newifi D2 (Newifi 3) router
+
+Signed-off-by: Newifi3 Support <support@newifi3.com>
+---
+ drivers/mtd/spi-nor/winbond.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+--- a/drivers/mtd/spi-nor/winbond.c
++++ b/drivers/mtd/spi-nor/winbond.c
+@@ -98,6 +98,10 @@ static const struct flash_info winbond_p
+ 			     SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
+ 	{ "w25q256jw", INFO(0xef6019, 0, 64 * 1024, 512,
+ 			     SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
++	{ "w25q512jv", INFO(0xef4020, 0, 64 * 1024, 1024,
++			    SECT_4K | SPI_NOR_QUAD_READ | SPI_NOR_DUAL_READ |
++			    SPI_NOR_HAS_TB | SPI_NOR_TB_SR_BIT6 |
++			    SPI_NOR_HAS_LOCK | SPI_NOR_4BIT_BP) },
+ 	{ "w25m512jv", INFO(0xef7119, 0, 64 * 1024, 1024,
+ 			    SECT_4K | SPI_NOR_QUAD_READ | SPI_NOR_DUAL_READ) },
+ 	{ "w25q512jvq", INFO(0xef4020, 0, 64 * 1024, 1024,
