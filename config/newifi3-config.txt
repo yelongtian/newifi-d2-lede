@@ -1,0 +1,59 @@
+# 新路由3 (Newifi D2) 固件编译配置
+
+## 设备信息
+- 设备名称: 新路由3 (Newifi D2)
+- CPU: MediaTek MT7621A
+- 内存: 512MB DDR3
+- 闪存: 64MB W25Q512JVFIQ (SPI NOR Flash)
+- 无线: MT7603 (2.4GHz) + MT7612E (5GHz)
+- 网口: 5个千兆网口 (4 LAN + 1 WAN)
+- USB: USB 3.0 x1
+
+## 闪存分区布局 (64MB)
+```
+0x000000 - 0x030000 (192KB)   u-boot
+0x030000 - 0x040000 (64KB)    u-boot-env
+0x040000 - 0x050000 (64KB)    factory (WiFi EEPROM)
+0x050000 - 0x4000000 (63MB)   firmware (kernel + rootfs)
+```
+
+## W25Q512JVFIQ 闪存配置
+- 芯片ID: 0xef4020
+- 容量: 64MB (512Mbit)
+- 页大小: 256字节
+- 扇区大小: 4KB
+- 块大小: 64KB
+- 特性: 支持4K扇区、双读、四读、块保护
+
+## 编译配置
+- 目标平台: ramips/mt7621
+- 设备: d-team_newifi-d2
+- 固件大小: 64512KB (63MB)
+- 内核配置: 默认配置 + IPv6支持
+
+## 预装软件包
+- kmod-mt7603: 2.4GHz无线驱动
+- kmod-mt76x2: 5GHz无线驱动
+- kmod-usb3: USB 3.0支持
+- kmod-usb-ledtrig-usbport: USB LED触发器
+
+## 默认登录信息
+- IP地址: 192.168.1.1
+- 用户名: root
+- 密码: 无 (首次登录需设置)
+
+## 编译说明
+1. 使用 GitHub Actions 自动编译
+2. 编译产物位于 bin/targets/ramips/mt7621/
+3. 固件文件: openwrt-ramips-mt7621-d-team_newifi-d2-squashfs-sysupgrade.bin
+
+## 刷写方法
+1. 通过原厂固件后台刷写
+2. 通过 U-Boot 刷写
+3. 通过 TFTP 刷写
+
+## 注意事项
+- 刷写前请备份原厂固件
+- 确保设备电量充足
+- 刷写过程中不要断电
+- 首次刷写建议使用网线连接
